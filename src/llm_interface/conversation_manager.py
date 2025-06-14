@@ -20,12 +20,8 @@ class ConversationManager:
             'group_preferences': []
         }
         
-        # For HuggingFace Spaces, use smart fallbacks primarily
-        self.use_fallback_responses = True
-        
-        # Load model only if needed
-        if not self.use_fallback_responses:
-            self._load_model()
+        # Always load the LLM - no fallbacks
+        self._load_model()
     
     def _load_model(self):
         """Load the quantized LLM model for CPU inference"""
@@ -88,27 +84,24 @@ class ConversationManager:
     
     def _create_system_prompt(self) -> str:
         """Create the system prompt for the music agent"""
-        return """You are an AI music assistant specializing in collaborative playlist creation and music generation. Your capabilities include:
+        return """You are an AI music assistant specializing in collaborative playlist creation and music generation. 
 
-1. ANALYZE user music preferences from song examples
-2. CREATE collaborative playlists that find common ground between different tastes
-3. GENERATE original music by blending different styles
-4. EXPLAIN your musical choices and recommendations
+Your role:
+- Create personalized playlists based on user preferences
+- Generate original music compositions
+- Explain musical choices and theory
+- Help users discover new music
 
 Guidelines:
-- Always ask for specific song examples to better understand preferences
-- Explain your recommendations in musical terms (tempo, key, energy, etc.)
-- Offer to create original music when appropriate
 - Be conversational and enthusiastic about music
-- Use function calls to analyze songs, generate playlists, or create music
+- When users mention specific songs, acknowledge them and use them as inspiration
+- Create playlists immediately when users ask, don't just ask more questions
+- Use the music database to make recommendations
+- Explain your choices in musical terms
 
-Available functions:
-- analyze_song_features(song_name, artist): Get musical features of a song
-- generate_playlist(preferences, group_size): Create collaborative playlist
-- create_original_music(style_blend, tempo, key): Generate new music
-- explain_song_choice(song, reason): Explain why a song fits
+Available music database includes: jazz (Miles Davis, John Coltrane), electronic (Deadmau5, Zedd), rock (Queen, Led Zeppelin), pop (The Weeknd, Ed Sheeran), and many more across 14 genres.
 
-Remember: You're helping people discover music and create together!"""
+Remember: You're here to create music experiences, not just ask questions!"""
     
     def _extract_function_calls(self, text: str) -> List[Dict]:
         """Extract function calls from LLM response"""
@@ -162,7 +155,7 @@ Remember: You're helping people discover music and create together!"""
     def _generate_response(self, prompt: str) -> str:
         """Generate response using the LLM"""
         if self.model is None or self.tokenizer is None:
-            return self._generate_fallback_response(prompt)
+            return "I'm sorry, my AI model isn't loaded properly. Please try restarting the application."
         
         try:
             # Tokenize input with shorter context
@@ -170,7 +163,7 @@ Remember: You're helping people discover music and create together!"""
                 prompt,
                 return_tensors="pt",
                 truncation=True,
-                max_length=1024,  # Reduced context length
+                max_length=1024,
                 padding=True
             )
             
@@ -179,8 +172,8 @@ Remember: You're helping people discover music and create together!"""
                 outputs = self.model.generate(
                     inputs.input_ids,
                     attention_mask=inputs.attention_mask,
-                    max_new_tokens=150,  # Reduced from 300
-                    temperature=0.7,
+                    max_new_tokens=200,
+                    temperature=0.8,
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
@@ -193,11 +186,11 @@ Remember: You're helping people discover music and create together!"""
             # Extract only the new generated part
             response = response[len(prompt):].strip()
             
-            return response if response else self._generate_fallback_response(prompt)
+            return response if response else "I understand you want help with music. Could you tell me more about what you're looking for?"
         
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
-            return self._generate_fallback_response(prompt)
+            return "I'm having trouble generating a response right now. Could you please try again?"
     
     def _generate_fallback_response(self, prompt: str) -> str:
         """Generate intelligent rule-based responses for any music query"""
@@ -480,32 +473,38 @@ I'm here to help you explore, create, and understand music in all its forms.
 **🎶 Ready to dive into your musical journey?** Just tell me what you're looking for! ✨"""
     
     def process_message(self, message: str, chat_history: List, feature_extractor, playlist_generator, music_creator) -> Dict:
-        """Process user message with instant fallback responses"""
+        """Process user message using LLM only"""
         
-        # Use smart fallback system for instant responses
-        if self.use_fallback_responses:
-            response = self._generate_fallback_response(message)
-            
-            # Still execute function calls for actual music operations
-            functions = self._extract_function_calls(message)
-            function_results = []
-            
-            for function in functions:
-                result = self._execute_function(function, feature_extractor, playlist_generator, music_creator)
-                function_results.append(result)
-            
-            # Update conversation state
-            self._update_conversation_state(message, response)
-            
-            return {
-                'response': response,
-                'functions_called': functions,
-                'function_results': function_results,
-                'conversation_state': self.conversation_state
-            }
+        # Create conversation context
+        conversation_context = self._create_system_prompt() + "\n\n"
         
-        # Fallback to LLM if available (slower but more flexible)
-        return self._process_with_llm(message, chat_history, feature_extractor, playlist_generator, music_creator)
+        # Add chat history for context
+        for user_msg, ai_msg in chat_history[-3:]:  # Last 3 exchanges
+            conversation_context += f"User: {user_msg}\nAssistant: {ai_msg}\n\n"
+        
+        # Add current message
+        conversation_context += f"User: {message}\nAssistant:"
+        
+        # Generate response using LLM
+        response = self._generate_response(conversation_context)
+        
+        # Extract and execute function calls if any
+        functions = self._extract_function_calls(response)
+        function_results = []
+        
+        for function in functions:
+            result = self._execute_function(function, feature_extractor, playlist_generator, music_creator)
+            function_results.append(result)
+        
+        # Update conversation state
+        self._update_conversation_state(message, response)
+        
+        return {
+            'response': response,
+            'functions_called': functions,
+            'function_results': function_results,
+            'conversation_state': self.conversation_state
+        }
     
     def _update_conversation_state(self, user_message: str, ai_response: str):
         """Update conversation state based on the interaction"""
