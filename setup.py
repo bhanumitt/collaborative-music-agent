@@ -50,16 +50,12 @@ def create_env_file():
     """Create a sample .env file"""
     env_content = """# Collaborative Music Creation Agent - Environment Variables
 
-# Spotify API (Optional - for extended functionality)
-SPOTIFY_CLIENT_ID=your_spotify_client_id_here
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
-
 # HuggingFace Settings
 HF_TOKEN=your_huggingface_token_here
 
 # Model Settings
-MODEL_NAME=microsoft/Phi-3-mini-4k-instruct
-MAX_TOKENS=300
+MODEL_NAME=microsoft/DialoGPT-medium
+MAX_TOKENS=150
 TEMPERATURE=0.7
 
 # Demo Settings
@@ -68,7 +64,7 @@ LOG_LEVEL=INFO
 
 # Performance Settings
 BATCH_SIZE=1
-USE_QUANTIZATION=true
+USE_FALLBACK_RESPONSES=true
 DEVICE=cpu
 """
     
@@ -88,7 +84,11 @@ def install_dependencies():
     return True
 
 def create_gitignore():
-    """Create .gitignore file"""
+    """Create .gitignore file only if it doesn't exist"""
+    if os.path.exists(".gitignore"):
+        print("⚠️  .gitignore already exists - skipping creation")
+        return
+        
     gitignore_content = """# Python
 __pycache__/
 *.py[cod]
@@ -113,24 +113,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
 
 # Virtual environments
 .env
@@ -168,9 +150,16 @@ temp/
 *.mp3
 
 # Secrets
-.env
 config.json
 secrets.json
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints
 """
     
     with open(".gitignore", "w") as f:
@@ -178,7 +167,11 @@ secrets.json
     print("✓ Created .gitignore file")
 
 def create_readme():
-    """Create enhanced README.md"""
+    """Create enhanced README.md only if it doesn't exist"""
+    if os.path.exists("README.md"):
+        print("⚠️  README.md already exists - skipping creation")
+        return
+    
     readme_content = """# 🎵 Collaborative Music Creation Agent
 
 An AI-powered music assistant that creates collaborative playlists and generates original music through conversational interaction.
@@ -364,7 +357,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
     
     with open("README.md", "w") as f:
         f.write(readme_content)
-    print("✓ Created enhanced README.md")
+    print("✓ Created README.md")
 
 def main():
     """Main setup function"""
@@ -381,8 +374,6 @@ def main():
     
     # Create configuration files
     create_env_file()
-    create_gitignore()
-    create_readme()
     print()
     
     # Check if requirements.txt exists before installing
