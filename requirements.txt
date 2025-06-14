@@ -1,5 +1,5 @@
 # Core ML and AI (CPU optimized)
-torch==2.0.1+cpu
+torch==2.0.1
 transformers==4.44.0
 accelerate==0.24.1
 
