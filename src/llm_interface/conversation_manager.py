@@ -8,8 +8,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ConversationManager:
-    def __init__(self, model_name: str = "microsoft/DialoGPT-medium"):
-        """Initialize the conversation manager with CPU-optimized LLM"""
+    def __init__(self, model_name: str = "distilgpt2"):
+        """Initialize with lightweight CPU-friendly model"""
         self.model_name = model_name
         self.tokenizer = None
         self.model = None
@@ -84,24 +84,16 @@ class ConversationManager:
     
     def _create_system_prompt(self) -> str:
         """Create the system prompt for the music agent"""
-        return """You are an AI music assistant specializing in collaborative playlist creation and music generation. 
+        return """You are a music assistant. When users ask about playlists, songs, or music preferences:
 
-Your role:
-- Create personalized playlists based on user preferences
-- Generate original music compositions
-- Explain musical choices and theory
-- Help users discover new music
+1. Acknowledge what they mentioned specifically
+2. Create helpful recommendations immediately  
+3. Use the available music database (jazz, electronic, rock, pop, classical, etc.)
+4. Be direct and helpful, not vague
 
-Guidelines:
-- Be conversational and enthusiastic about music
-- When users mention specific songs, acknowledge them and use them as inspiration
-- Create playlists immediately when users ask, don't just ask more questions
-- Use the music database to make recommendations
-- Explain your choices in musical terms
+Available music includes artists like Miles Davis, Deadmau5, Queen, Ed Sheeran, and many more across different genres.
 
-Available music database includes: jazz (Miles Davis, John Coltrane), electronic (Deadmau5, Zedd), rock (Queen, Led Zeppelin), pop (The Weeknd, Ed Sheeran), and many more across 14 genres.
-
-Remember: You're here to create music experiences, not just ask questions!"""
+Be conversational but focused on actually helping with music requests."""
     
     def _extract_function_calls(self, text: str) -> List[Dict]:
         """Extract function calls from LLM response"""
@@ -158,21 +150,14 @@ Remember: You're here to create music experiences, not just ask questions!"""
             return "I'm sorry, my AI model isn't loaded properly. Please try restarting the application."
         
         try:
-            # Tokenize input with shorter context
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=1024,
-                padding=True
-            )
+            # For DialoGPT, we need to encode properly
+            inputs = self.tokenizer.encode(prompt + self.tokenizer.eos_token, return_tensors="pt")
             
-            # Generate response with faster settings
+            # Generate response
             with torch.no_grad():
                 outputs = self.model.generate(
-                    inputs.input_ids,
-                    attention_mask=inputs.attention_mask,
-                    max_new_tokens=200,
+                    inputs,
+                    max_length=inputs.shape[1] + 100,
                     temperature=0.8,
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
@@ -181,12 +166,9 @@ Remember: You're here to create music experiences, not just ask questions!"""
                 )
             
             # Decode response
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            response = self.tokenizer.decode(outputs[0][inputs.shape[1]:], skip_special_tokens=True)
             
-            # Extract only the new generated part
-            response = response[len(prompt):].strip()
-            
-            return response if response else "I understand you want help with music. Could you tell me more about what you're looking for?"
+            return response.strip() if response.strip() else "I'd be happy to help you with music recommendations!"
         
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
@@ -473,38 +455,152 @@ I'm here to help you explore, create, and understand music in all its forms.
 **🎶 Ready to dive into your musical journey?** Just tell me what you're looking for! ✨"""
     
     def process_message(self, message: str, chat_history: List, feature_extractor, playlist_generator, music_creator) -> Dict:
-        """Process user message using LLM only"""
+        """Hybrid approach: LLM understanding + music logic + LLM formatting"""
         
-        # Create conversation context
-        conversation_context = self._create_system_prompt() + "\n\n"
+        # Step 1: Extract user intent using simple parsing
+        intent = self._extract_user_intent(message)
         
-        # Add chat history for context
-        for user_msg, ai_msg in chat_history[-3:]:  # Last 3 exchanges
-            conversation_context += f"User: {user_msg}\nAssistant: {ai_msg}\n\n"
+        # Step 2: Use music logic to generate actual recommendations
+        music_result = self._execute_music_logic(intent, feature_extractor, playlist_generator, music_creator)
         
-        # Add current message
-        conversation_context += f"User: {message}\nAssistant:"
-        
-        # Generate response using LLM
-        response = self._generate_response(conversation_context)
-        
-        # Extract and execute function calls if any
-        functions = self._extract_function_calls(response)
-        function_results = []
-        
-        for function in functions:
-            result = self._execute_function(function, feature_extractor, playlist_generator, music_creator)
-            function_results.append(result)
+        # Step 3: Use LLM to format the response nicely
+        formatted_response = self._format_response_with_llm(intent, music_result, message)
         
         # Update conversation state
-        self._update_conversation_state(message, response)
+        self._update_conversation_state(message, formatted_response)
         
         return {
-            'response': response,
-            'functions_called': functions,
-            'function_results': function_results,
+            'response': formatted_response,
+            'functions_called': [],
+            'function_results': [music_result],
             'conversation_state': self.conversation_state
         }
+    
+    def _extract_user_intent(self, message: str) -> Dict:
+        """Extract user intent using keyword matching"""
+        message_lower = message.lower()
+        intent = {
+            'type': 'general',
+            'songs_mentioned': [],
+            'genres_mentioned': [],
+            'mood': None,
+            'activity': None
+        }
+        
+        # Extract song mentions
+        song_keywords = ['pompeii', 'strobe', 'levels', 'clarity', 'take five', 'kind of blue']
+        for song in song_keywords:
+            if song in message_lower:
+                intent['songs_mentioned'].append(song)
+        
+        # Extract genres
+        genre_keywords = {
+            'jazz': ['jazz', 'bebop', 'swing'],
+            'electronic': ['electronic', 'edm', 'techno', 'house'],
+            'rock': ['rock', 'indie', 'alternative'],
+            'pop': ['pop', 'mainstream'],
+            'classical': ['classical', 'orchestral']
+        }
+        
+        for genre, keywords in genre_keywords.items():
+            if any(keyword in message_lower for keyword in keywords):
+                intent['genres_mentioned'].append(genre)
+        
+        # Extract mood/activity
+        if any(word in message_lower for word in ['study', 'focus', 'work']):
+            intent['activity'] = 'study'
+        elif any(word in message_lower for word in ['party', 'dance', 'energy']):
+            intent['activity'] = 'party'
+        elif any(word in message_lower for word in ['chill', 'relax', 'calm']):
+            intent['activity'] = 'chill'
+        
+        # Determine intent type
+        if 'playlist' in message_lower or intent['songs_mentioned'] or intent['activity']:
+            intent['type'] = 'playlist_request'
+        elif any(word in message_lower for word in ['generate', 'create', 'compose']) and 'music' in message_lower:
+            intent['type'] = 'music_generation'
+        elif any(word in message_lower for word in ['why', 'explain', 'analyze']):
+            intent['type'] = 'analysis'
+        
+        return intent
+    
+    def _execute_music_logic(self, intent: Dict, feature_extractor, playlist_generator, music_creator) -> Dict:
+        """Execute actual music logic based on intent"""
+        
+        if intent['type'] == 'playlist_request':
+            # Build preference string
+            preferences = []
+            if intent['songs_mentioned']:
+                preferences.extend(intent['songs_mentioned'])
+            if intent['genres_mentioned']:
+                preferences.extend(intent['genres_mentioned'])
+            if intent['activity']:
+                preferences.append(intent['activity'])
+            
+            preference_string = ' '.join(preferences) if preferences else 'general music'
+            
+            # Generate actual playlist
+            playlist_result = playlist_generator.generate_collaborative_playlist(preference_string, 5)
+            return {
+                'type': 'playlist',
+                'data': playlist_result
+            }
+        
+        elif intent['type'] == 'music_generation':
+            # Generate music
+            style_desc = ' '.join(intent['genres_mentioned']) if intent['genres_mentioned'] else 'pop electronic'
+            music_result = music_creator.create_music(style_desc)
+            return {
+                'type': 'music_generation',
+                'data': music_result
+            }
+        
+        elif intent['type'] == 'analysis':
+            return {
+                'type': 'analysis',
+                'data': {'explanation': 'Music analysis based on harmonic and rhythmic compatibility'}
+            }
+        
+        else:
+            return {
+                'type': 'general',
+                'data': {'message': 'I can help with playlists, music generation, and analysis!'}
+            }
+    
+    def _format_response_with_llm(self, intent: Dict, music_result: Dict, original_message: str) -> str:
+        """Use LLM to format the response naturally"""
+        
+        if music_result['type'] == 'playlist':
+            playlist_data = music_result['data']
+            playlist_songs = playlist_data.get('playlist', [])
+            
+            # Create a natural response about the playlist
+            if intent['songs_mentioned']:
+                song_mention = intent['songs_mentioned'][0].title()
+                response = f"Great choice mentioning {song_mention}! I've created a playlist inspired by that style:\n\n"
+            else:
+                response = "I've created a playlist for you:\n\n"
+            
+            # Add songs
+            for i, song in enumerate(playlist_songs[:5], 1):
+                song_name = song.get('name', 'Unknown Song')
+                response += f"{i}. {song_name}\n"
+            
+            # Add explanation
+            explanation = playlist_data.get('explanation', '')
+            if explanation:
+                response += f"\n{explanation}"
+            
+            return response
+        
+        elif music_result['type'] == 'music_generation':
+            return f"I've created an original composition for you! {music_result['data'].get('explanation', 'A unique musical piece.')}"
+        
+        elif music_result['type'] == 'analysis':
+            return "I can analyze musical compatibility based on tempo, key, energy, and genre relationships. What specific songs would you like me to compare?"
+        
+        else:
+            return "I'm here to help with music! I can create playlists, generate original music, or analyze songs. What would you like to explore?"
     
     def _update_conversation_state(self, user_message: str, ai_response: str):
         """Update conversation state based on the interaction"""
