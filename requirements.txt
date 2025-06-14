@@ -1,8 +1,7 @@
-# Core ML and AI
-torch==2.0.1
+# Core ML and AI (CPU optimized)
+torch==2.0.1+cpu
 transformers==4.44.0
 accelerate==0.24.1
-bitsandbytes==0.41.1
 
 # Audio Processing
 librosa==0.10.1
