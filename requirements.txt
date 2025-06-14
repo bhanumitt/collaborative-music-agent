@@ -1,6 +1,6 @@
 # Core ML and AI
 torch==2.0.1
-transformers==4.35.0
+transformers==4.44.0
 accelerate==0.24.1
 bitsandbytes==0.41.1
 
@@ -22,7 +22,7 @@ pandas==2.0.3
 scipy==1.11.1
 
 # Web Interface
-gradio==4.0.2
+gradio==4.44.1
 fastapi==0.104.1
 uvicorn==0.24.0
 

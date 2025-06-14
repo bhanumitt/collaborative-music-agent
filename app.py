@@ -101,7 +101,6 @@ def create_interface():
                 chatbot = gr.Chatbot(
                     label="Music Agent Chat",
                     height=500,
-                    placeholder="Hi! I'm your AI music assistant. Tell me about your music preferences or ask me to create a collaborative playlist!",
                     elem_classes=["chat-container"]
                 )
                 

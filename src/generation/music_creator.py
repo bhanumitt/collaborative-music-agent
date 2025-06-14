@@ -3,7 +3,7 @@ import numpy as np
 import random
 from typing import Dict, List, Tuple, Optional
 import logging
-from music21 import stream, note, chord, duration, tempo, key, time, scale, interval
+from music21 import stream, note, chord, duration, tempo, key, meter, scale, interval
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class MusicCreator:
         composition_key = key.Key(target_key)
         score.append(composition_key)
         score.append(tempo.TempoIndication(number=target_tempo))
-        score.append(time.TimeSignature('4/4'))
+        score.append(meter.TimeSignature('4/4'))
         
         # Blend chord progressions from different styles
         chord_progression = self._blend_chord_progressions(styles, target_key)
